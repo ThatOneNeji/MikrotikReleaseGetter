@@ -1,0 +1,37 @@
+{
+    "logger": {
+        "appenders": {
+            "out": {
+                "type": "console"
+            },
+            "task": {
+                "type": "file",
+                "filename": "logs/server.log",
+                "maxLogSize": 1048576,
+                "backups": 10
+            }
+        },
+        "categories": {
+            "default": {
+                "appenders": [
+                    "out",
+                    "task"
+                ],
+                "level": "debug"
+            },
+            "task": {
+                "appenders": [
+                    "task"
+                ],
+                "level": "error"
+            }
+        }
+    },
+    "web": {
+        "host": "mikrotik.com",
+        "path": "/download"
+    },
+    "cron": "*/10 * * * *",
+    "downloadPath": "download",
+    "redownload": false
+}

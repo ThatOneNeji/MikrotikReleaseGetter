@@ -1,0 +1,20 @@
+{
+    "env": {
+        "commonjs": true,
+        "es2020": true,
+        "node": true
+    },
+    "extends": [
+        "google"
+    ],
+    "parserOptions": {
+        "ecmaVersion": 11
+    },
+    "rules": {
+        "indent": 0,
+        "max-len": "off",
+        "comma-dangle": "off",
+        "eol-last": "off",
+        "object-curly-spacing": "off"
+    }
+}
