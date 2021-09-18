@@ -106,3 +106,4 @@ dist
 download/
 cert.pem
 package-lock.json
+documentation

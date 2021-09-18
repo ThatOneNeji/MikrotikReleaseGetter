@@ -4,14 +4,27 @@
     "keywords": [
         "mikrotik"
     ],
-    "author": "Neji",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ThatOneNeji/MikrotikReleaseGetter.git"
+    },
+    "description": "Application to check and download Mikrotik releases",
+    "license": "MIT",
+    "author": "ThatOneNeji",
     "contributors": [],
     "dependencies": {
         "async": "^3.2.1",
         "log4js": "^6.3.0",
         "node-cron": "^3.0.0",
-        "node-libcurl": "^2.3.3",
+        "request": "^2.88.2",
         "tls": "0.0.1"
+    },
+    "main": "main.js",
+    "scripts": {
+        "start": "node main.js",
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "documentation": "./node_modules/.bin/jsdoc -c jsdoc.json main.js",
+        "lint": "./node_modules/.bin/eslint main.js"
     },
     "devDependencies": {
         "eslint": "^7.32.0",

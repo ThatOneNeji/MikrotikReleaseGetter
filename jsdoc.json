@@ -1,0 +1,41 @@
+{
+    "tags": {
+        "allowUnknownTags": true
+    },
+    "source": {
+        "includePattern": ".+\\.js(doc|x)?$",
+        "exclude": [
+            "node_modules",
+            "lib/node_modules"
+        ],
+        "excludePatterns": "(^|\\/|\\\\|node_modules)"
+    },
+    "plugins": [
+        "plugins/markdown"
+    ],
+    "templates": {
+        "cleverLinks": false,
+        "systemName": "Mikrotik Release Getter",
+        "monospaceLinks": false,
+        "dateFormat": "YYYY/MM/DD",
+        "navType": "inline",
+        "theme": "slate",
+        "linenums": true,
+        "footer": "",
+        "inverseNav": false,
+        "default": {
+            "outputSourceFiles": true
+        }
+    },
+    "opts": {
+        "encoding": "utf8",
+        "readme": "./README.md",
+        "destination": "documentation/",
+        "recurse": true,
+        "verbose": true,
+        "template": "./node_modules/ink-docstrap/template",
+        "theme_opts": {
+            "theme": "dark"
+        }
+    }
+}

@@ -26,25 +26,68 @@ const httpOptions = {
     method: 'GET'
 };
 
+/* typedefs */
+/**
+ * @typedef {Object} exitOptions
+ * @property {boolean} exit Is this an exit
+ * @property {string} type What is the type that was called in order to exit the application
+ * @property {string} description The description of the type of exit
+ * @description This object contains the exit information of the application
+ */
+
+/**
+ * @typedef {Object} fileObject
+ * @property {string} url Target URL of file
+ * @property {string} filename File name
+ * @property {string} sha256 SHA256 hash for file
+ * @property {string} filepath Local file path
+ * @property {string} status Status so far
+ * @property {string} size Size of local file
+ * @description This object contains the information for file to be downloaded
+ */
+
+/**
+ * @typedef {Object} releaseObject
+ * @property {string} version Scrapped version
+ * @property {array} rawurls All scrapped URLs for this release
+ * @property {array} urls Array of download URLs with no duplicates
+ * @property {array} sha256 Array of hashes
+ * @property {fileObject[]} objs This object contains the information for file to be downloaded
+ * @description This object contains information for all releases
+ */
+
+/**
+ * @typedef {Object} releasesObjects
+ * @property {releaseObject} longterm This object contains scrapped information for a release
+ * @property {releaseObject} stable This object contains scrapped information for a release
+ * @property {releaseObject} testing This object contains scrapped information for a release
+ * @property {releaseObject} development This object contains scrapped information for a release
+ * @description This object contains scrapped information for a release
+ */
+
+
 /* Regex list */
+/**
+ * @const {string} regexPatternLongTermRelease - Regex pattern to match Long Term release
+ */
+const regexPatternLongTermRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(L/gm;
+/**
+ * @const {string} regexPatternStableRelease - Regex pattern to match Stable release
+ */
+const regexPatternStableRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(S/gm;
+/**
+ * @const {string} regexPatternTestingRelease - Regex pattern to match Testing release
+ */
+const regexPatternTestingRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(T/gm;
+/**
+ * @const {string} regexPatternDevelopmentRelease - Regex pattern to match Development release
+ */
+const regexPatternDevelopmentRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(D/gm;
+
 
 /**
- * @const {string} downloadlinks - Regex pattern to match
+ * @const {releasesObjects} releases - This object contains information for all releases
  */
-const longtermRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(L/gm;
-/**
- * @const {string} downloadlinks - Regex pattern to match
- */
-const stableRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(S/gm;
-/**
- * @const {string} downloadlinks - Regex pattern to match
- */
-const testingRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(T/gm;
-/**
- * @const {string} downloadlinks - Regex pattern to match
- */
-const developmentRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(D/gm;
-
 const releases = {
     longterm: {
         version: '',
@@ -81,8 +124,8 @@ process.stdin.resume(); // so the program will not close instantly
 
 /**
  *
- * @param {*} options
- * @param {*} exitCode
+ * @param {exitOptions} options This object contains the exit information of the application
+ * @param {string} exitCode Exit code of application
  * @description This function handles the exiting of the application
  */
 function exitHandler(options, exitCode) {
@@ -98,7 +141,6 @@ function exitHandler(options, exitCode) {
 }
 
 // do something when app is closing
-// process.on('exit', exitHandler.bind(null, { cleanup: true, type: 'ENDING', description: 'Application ending' }));
 process.on('exit', (code) => {
     const msg = { cleanup: true, type: 'exit', code: code };
     logger.debug('Application shut down: ' + JSON.stringify(msg));
@@ -123,8 +165,8 @@ process.on('uncaughtException', (error) => {
 
 /**
  *
- * @param {string} pathstr
- * @description description
+ * @param {string} pathstr Target directory path
+ * @description This function checks to see if there already exits a target path and if not, then create it
  */
 function createDirectory(pathstr) {
     if (fs.existsSync(pathstr)) {
@@ -136,7 +178,7 @@ function createDirectory(pathstr) {
 }
 
 /**
- *
+ * @description This function updates the cert.pem file
  */
 function updateSSLCert() {
     certFilePath = path.join(__dirname, 'cert.pem');
@@ -146,23 +188,23 @@ function updateSSLCert() {
 
 /**
  *
- * @param {string} line
- * @description description
+ * @param {string} line Raw line to be used to check if it contains a release value
+ * @description This function checks to see if the supplied line matches any of the release's regex patterns
  */
 function getReleases(line) {
-    const reExec1 = longtermRelease.exec(line);
+    const reExec1 = regexPatternLongTermRelease.exec(line);
     if (reExec1) {
         releases.longterm.version = reExec1.groups.release;
     }
-    const reExec2 = stableRelease.exec(line);
+    const reExec2 = regexPatternStableRelease.exec(line);
     if (reExec2) {
         releases.stable.version = reExec2.groups.release;
     }
-    const reExec3 = testingRelease.exec(line);
+    const reExec3 = regexPatternTestingRelease.exec(line);
     if (reExec3) {
         releases.testing.version = reExec3.groups.release;
     }
-    const reExec4 = developmentRelease.exec(line);
+    const reExec4 = regexPatternDevelopmentRelease.exec(line);
     if (reExec4) {
         releases.development.version = reExec4.groups.release;
     }
@@ -170,8 +212,9 @@ function getReleases(line) {
 
 /**
  *
- * @param {string} localFile
+ * @param {string} localFile Target file
  * @return {boolean}
+ * @description This function checks to see if the target file exists
  */
 function checkIfFileExists(localFile) {
     let fileRes = false;
@@ -190,8 +233,9 @@ function checkIfFileExists(localFile) {
 
 /**
  *
- * @param {*} filename
- * @return {*}
+ * @param {string} filename Target file to be checked
+ * @return {number|boolean}
+ * @description This function tries to get the size of the target file
  */
 function getFileStats(filename) {
     try {
@@ -206,9 +250,10 @@ function getFileStats(filename) {
 
 /**
  *
- * @param {*} localFile
- * @param {*} remotePath
- * @param {*} callback
+ * @param {string} localFile Target local file name
+ * @param {string} remotePath Remote file name
+ * @param {function} callback Callback function
+ * @description This function actually downloads the remote file
  */
 function download(localFile, remotePath, callback) {
     const localStream = fs.createWriteStream(localFile);
@@ -227,11 +272,12 @@ function download(localFile, remotePath, callback) {
 
 /**
  *
- * @param {string} uri
- * @param {string} rawPage
- * @return {object}
+ * @param {string} uri Uniform Resource Identifier
+ * @param {array} rawPage Lines from the download page
+ * @return {fileObject}
+ * @description This function scraps the SHA256 hash for the various files
  */
-function fileObject(uri, rawPage) {
+function buildFileObject(uri, rawPage) {
     const fObj = {
         url: uri,
         filename: uri.split('/').reverse()[0],
@@ -254,26 +300,28 @@ function fileObject(uri, rawPage) {
 
 /**
  *
- * @param {*} objs
- * @param {*} path2
+ * @param {array} objs Array of objects that contain filenames and their hashes
+ * @param {string} downloadPath Target location to where the file must be written to
+ * @description This function creates the SHA256SUMS file that contains the hashes per file
  */
-function createSumsFile(objs, path2) {
+function createSumsFile(objs, downloadPath) {
     const sums = [];
     objs.forEach((element) => {
         sums.push(element.sha256 + ' *' + element.filename);
     });
     try {
-        fs.writeFileSync(path2 + 'SHA256SUMS', sums.join('\n'), { encoding: 'utf8', flag: 'w' });
+        fs.writeFileSync(downloadPath + 'SHA256SUMS', sums.join('\n'), { encoding: 'utf8', flag: 'w' });
     } catch (e) {
-        logger.error('Problem saving "' + path2 + 'SHA256SUMS" ' + JSON.stringify(e));
+        logger.error('Problem saving "' + downloadPath + 'SHA256SUMS" ' + JSON.stringify(e));
     }
 }
 
 
 /**
  *
- * @param {object} item
- * @return {object}
+ * @param {fileObject} item This object contains the information needed to verify the downloaded file
+ * @return {fileObject}
+ * @description This function checks to see that the download file's hash matches what was scrapped from the download page
  */
 function verifyFile(item) {
     const testfile = fs.readFileSync(item.filepath);
@@ -292,15 +340,7 @@ cron.schedule(appConfig.cron, function() {
     logger.info('Running cron...');
     let str = '';
     const req = https.request(httpOptions, (res) => {
-        // console.log(JSON.stringify(res));
         logger.debug('HTTP statusCode:', res.statusCode);
-        /*         console.log(res.statusCode);
-                console.log(res.statusMessage);
-                console.log(res.method);
-                console.log(res.path);
-                console.log(res.host);
-                console.log(res.protocol);
-                console.log(res.headers); */
         res.on('data', (d) => {
             str += d;
         });
@@ -328,7 +368,7 @@ cron.schedule(appConfig.cron, function() {
 
                         releases[prop].urls = [...new Set(releases[prop].rawurls)];
                         releases[prop].urls.sort().forEach((element) => {
-                            releases[prop].objs.push(fileObject(element, str.split('\n')));
+                            releases[prop].objs.push(buildFileObject(element, str.split('\n')));
                         });
                         async.forEach(releases[prop].objs, function(item, cb) {
                             const localFileName = item.filename;
