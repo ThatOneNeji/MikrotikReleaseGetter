@@ -7,6 +7,18 @@ const request = require('request');
 const appConfig = require('./config.json');
 const logger = log4js.getLogger('MikrotikReleaseGetter');
 const fs = require('fs');
+const xmlParser = require('xml2json');
+
+const NodeHtmlMarkdown = require('node-html-markdown');
+// import { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } from 'node-html-markdown';
+const nhm = new NodeHtmlMarkdown.NodeHtmlMarkdown(
+    /* options (optional) */
+    {},
+    /* customTransformers (optional) */
+    undefined,
+    /* customCodeBlockTranslators (optional) */
+    undefined
+);
 
 const tls = require('tls');
 const path = require('path');
@@ -19,9 +31,16 @@ logger.info('Starting');
 createDirectory(appConfig.downloadPath);
 updateSSLCert();
 
-const httpOptions = {
+const httpOptionsDownloads = {
     host: appConfig.web.host,
     path: appConfig.web.path,
+    encoding: 'binary',
+    method: 'GET'
+};
+
+const httpOptionsChangelogs = {
+    host: appConfig.web.host,
+    path: appConfig.web.changelog,
     encoding: 'binary',
     method: 'GET'
 };
@@ -335,12 +354,62 @@ function verifyFile(item) {
     return item;
 }
 
-/* Cron that runs everyday at 23:00:00 */
+/**
+ *
+ * @param {string} line
+ * @param {string} pattern
+ * @return {boolean}
+ * @description description
+ */
+function ifRegexMatch(line, pattern) {
+    const re = new RegExp(pattern);
+    if (re.test(line)) {
+        return true;
+    }
+    return false;
+}
+
+/**
+ *
+ * @param {string} release This is the release that will be searched for in order to get the changelog
+ * @description This function gets the changelog entries for teh supplied release
+ */
+function getChangelog(release) {
+    let str = '';
+    let extractedChangelog = '';
+    const req = https.request(httpOptionsChangelogs, (res) => {
+        logger.debug('HTTP statusCode for "' + httpOptionsChangelogs.path + '":' + res.statusCode);
+        res.on('data', (d) => {
+            str += d;
+        });
+        res.on('end', function() {
+            const changelogRaw = xmlParser.toJson(str);
+            const changelogJSON = JSON.parse(changelogRaw);
+            changelogJSON.rss.channel.item.forEach((element) => {
+                if (ifRegexMatch(element.title, release)) {
+                    extractedChangelog = element.description;
+                }
+            });
+            try {
+                fs.writeFileSync(appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md', nhm.translate(extractedChangelog), { encoding: 'utf8', flag: 'w' });
+            } catch (e) {
+                logger.error('Problem saving "' + appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md" ' + JSON.stringify(e));
+            }
+        });
+    });
+
+    req.on('error', (e) => {
+        logger.error('Problem getting download page:' + JSON.stringify(e));
+    });
+
+    req.end();
+}
+
 cron.schedule(appConfig.cron, function() {
     logger.info('Running cron...');
     let str = '';
-    const req = https.request(httpOptions, (res) => {
-        logger.debug('HTTP statusCode:', res.statusCode);
+    const req = https.request(httpOptionsDownloads, (res) => {
+        logger.debug('HTTP statusCode for "' + httpOptionsDownloads.path + '":' + res.statusCode);
         res.on('data', (d) => {
             str += d;
         });
@@ -394,6 +463,7 @@ cron.schedule(appConfig.cron, function() {
                             logger.error('Problem downloading files:' + JSON.stringify(err));
                         });
                         createSumsFile(releases[prop].objs, appConfig.downloadPath + '/' + releases[prop].version + '/');
+                        getChangelog(releases[prop].version);
                     } else {
                         logger.debug('No version found for "' + prop + '"');
                     }

@@ -107,3 +107,4 @@ download/
 cert.pem
 package-lock.json
 documentation
+_tmp
