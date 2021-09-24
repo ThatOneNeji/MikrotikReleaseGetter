@@ -32,7 +32,7 @@
         "path": "/download",
         "changelog": "/download.rss"
     },
-    "cron": "* * * * *",
+    "cron": "0 * * * *",
     "downloadPath": "download",
     "redownload": false
 }

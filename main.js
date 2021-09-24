@@ -10,15 +10,7 @@ const fs = require('fs');
 const xmlParser = require('xml2json');
 
 const NodeHtmlMarkdown = require('node-html-markdown');
-// import { NodeHtmlMarkdown, NodeHtmlMarkdownOptions } from 'node-html-markdown';
-const nhm = new NodeHtmlMarkdown.NodeHtmlMarkdown(
-    /* options (optional) */
-    {},
-    /* customTransformers (optional) */
-    undefined,
-    /* customCodeBlockTranslators (optional) */
-    undefined
-);
+const nhm = new NodeHtmlMarkdown.NodeHtmlMarkdown({}, undefined, undefined);
 
 const tls = require('tls');
 const path = require('path');
