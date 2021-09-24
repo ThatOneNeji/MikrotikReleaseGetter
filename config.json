@@ -29,9 +29,10 @@
     },
     "web": {
         "host": "mikrotik.com",
-        "path": "/download"
+        "path": "/download",
+        "changelog": "/download.rss"
     },
-    "cron": "0 * * * *",
+    "cron": "* * * * *",
     "downloadPath": "download",
     "redownload": false
 }
