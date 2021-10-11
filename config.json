@@ -30,9 +30,16 @@
     "web": {
         "host": "mikrotik.com",
         "path": "/download",
-        "changelog": "/download.rss"
+        "changelog": "/download.rss",
+        "changelog2": "/download/changelogs?ax=loadLog&val="
     },
-    "cron": "0 * * * *",
+    "releases": {
+        "longterm": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(L",
+        "stable": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(S",
+        "testing": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(T",
+        "development": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(D"
+    },
+    "cron": "*/2 * * * *",
     "downloadPath": "download",
     "redownload": false
 }

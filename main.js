@@ -30,13 +30,6 @@ const httpOptionsDownloads = {
     method: 'GET'
 };
 
-const httpOptionsChangelogs = {
-    host: appConfig.web.host,
-    path: appConfig.web.changelog,
-    encoding: 'binary',
-    method: 'GET'
-};
-
 /* typedefs */
 /**
  * @typedef {Object} exitOptions
@@ -130,6 +123,14 @@ const releases = {
     }
 };
 
+const releaseBase = {
+    version: '',
+    rawurls: [],
+    urls: [],
+    sha256: [],
+    md5: [],
+    objs: []
+};
 
 process.stdin.resume(); // so the program will not close instantly
 
@@ -294,10 +295,9 @@ function buildFileObject(uri, rawPage) {
         filename: uri.split('/').reverse()[0],
         sha256: ''
     };
-
-    const shaRegex = new RegExp('>' + fObj.filename + '</td><td>MD5</td><td>[a-zA-Z0-9]+</td></tr><tr><td>SHA256</td><td>(?<sha_1>[a-zA-Z0-9]+)</td>|<b>SHA256 </b>' + fObj.filename + ': (?<sha_2>[a-zA-Z0-9]+)<br', 'i');
+    const hashRegex = new RegExp('>' + fObj.filename + '</td><td>MD5</td><td>[a-zA-Z0-9]+</td></tr><tr><td>SHA256</td><td>(?<sha_1>[a-zA-Z0-9]+)</td>|<b>SHA256 </b>' + fObj.filename + ': (?<sha_2>[a-zA-Z0-9]+)<br', 'i');
     rawPage.forEach((line) => {
-        const shaExec = shaRegex.exec(line);
+        const shaExec = hashRegex.exec(line);
         if (shaExec) {
             if (shaExec.groups.sha_1) {
                 fObj.sha256 = shaExec.groups.sha_1;
@@ -369,21 +369,22 @@ function ifRegexMatch(line, pattern) {
 function getChangelog(release) {
     let str = '';
     let extractedChangelog = '';
+    const httpOptionsChangelogs = {
+        host: appConfig.web.host,
+        path: appConfig.web.changelog2 + release,
+        encoding: 'binary',
+        method: 'GET'
+    };
+    //   httpOptionsChangelogs.path = appConfig.web.changelog2 + release;
     const req = https.request(httpOptionsChangelogs, (res) => {
         logger.debug('HTTP statusCode for "' + httpOptionsChangelogs.path + '":' + res.statusCode);
         res.on('data', (d) => {
             str += d;
         });
         res.on('end', function() {
-            const changelogRaw = xmlParser.toJson(str);
-            const changelogJSON = JSON.parse(changelogRaw);
-            changelogJSON.rss.channel.item.forEach((element) => {
-                if (ifRegexMatch(element.title, release)) {
-                    extractedChangelog = element.description;
-                }
-            });
+            extractedChangelog = str.split('\r\n');
             try {
-                fs.writeFileSync(appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md', nhm.translate(extractedChangelog), { encoding: 'utf8', flag: 'w' });
+                fs.writeFileSync(appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md', nhm.translate(extractedChangelog.join('<br>')), { encoding: 'utf8', flag: 'w' });
             } catch (e) {
                 logger.error('Problem saving "' + appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md" ' + JSON.stringify(e));
             }
@@ -418,8 +419,8 @@ cron.schedule(appConfig.cron, function() {
                         logger.debug('Now working on release "' + releases[prop].version + '"');
 
                         createDirectory(appConfig.downloadPath + '/' + releases[prop].version);
-                        const dlRegex = new RegExp('<a href="(?<filename>[a-zA-Z0-9:.\\-\\/]+' + releases[prop].version + '[a-zA-Z0-9:._\\-\\/]+)', 'gm');
-
+                        //                        const dlRegex = new RegExp('<a href="(?<filename>[a-zA-Z0-9:.\\-\\/]+' + releases[prop].version + '[a-zA-Z0-9:._\\-\\/]+)', 'gm');
+                        const dlRegex = new RegExp('<a href="(?<filename>[a-zA-Z0-9:.\\-\\/]+' + releases[prop].version + '/[a-zA-Z0-9:._\\-\\/]+)', 'gm');
                         contentData.forEach((line) => {
                             const reExec = dlRegex.exec(line);
                             if (reExec) {
