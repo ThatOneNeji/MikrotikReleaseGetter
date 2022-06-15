@@ -104,7 +104,11 @@ dist
 .tern-port
 
 download/
+download2/
+downloads/
 cert.pem
 package-lock.json
 documentation
 _tmp
+tmp/
+archive/
