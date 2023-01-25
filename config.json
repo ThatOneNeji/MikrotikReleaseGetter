@@ -7,7 +7,7 @@
             "task": {
                 "type": "file",
                 "filename": "logs/server.log",
-                "maxLogSize": 1048576,
+                "maxLogSize": 10485760,
                 "backups": 10
             }
         },
@@ -27,19 +27,64 @@
             }
         }
     },
+    "logging": {
+        "level": "debug",
+        "areas": [
+            "cron",
+            "downloader",
+            "https",
+            "fs"
+        ],
+        "owner": "MikrotikReleaseGetter"
+    },
     "web": {
+        "releases": {
+            "host": "mikrotik.com",
+            "path": "/download",
+            "changelog": "/download/changelogs?ax=loadLog&val=",
+            "downloadPath": "download2",
+            "timeout": 10000
+        },
+        "archive": {
+            "url": "https://mikrotik.com/download/archive",
+            "host22": "mikrotik.com",
+            "path22": "/download/archive",
+            "changelog22": "/download/changelogs?ax=loadLog&val=",
+            "changelog": "https://mikrotik.com/download/changelogs?ax=loadLog&val=",
+            "downloadPath": "archive",
+            "from_major_release": 6,
+            "from_minor_release": 40
+        }
+    },
+    "web22": {
         "host": "mikrotik.com",
         "path": "/download",
-        "changelog": "/download.rss",
-        "changelog2": "/download/changelogs?ax=loadLog&val="
+        "archive": "/download/archive",
+        "changelog2": "/download.rss",
+        "changelog": "/download/changelogs?ax=loadLog&val=",
+        "timeout": 10000
     },
-    "releases": {
+    "releases222": {
         "longterm": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(L",
         "stable": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(S",
         "testing": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(T",
         "development": ">(?<release>[0-9a-zA-Z\\.]+)\\s\\(D"
     },
-    "cron": "*/2 * * * *",
-    "downloadPath": "download",
-    "redownload": false
+    "cron": {
+        "interval": "*/10 * * * *",
+        "timezone": "Africa/Johannesburg",
+        "enabled": true
+    },
+    "paths": {
+        "releases": "releases"
+    },
+    "downloadPath": "releases",
+    "defaults": {
+        "timeout": 10000
+    },
+    "redownload": false,
+    "curl": {
+        "connect_timeout": 5,
+        "max_time": 30
+    }
 }
