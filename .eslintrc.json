@@ -8,7 +8,7 @@
         "google"
     ],
     "parserOptions": {
-        "ecmaVersion": 11
+        "ecmaVersion": "latest"
     },
     "rules": {
         "indent": 0,
