@@ -3,12 +3,9 @@
         "allowUnknownTags": true
     },
     "source": {
-        "includePattern": ".+\\.js(doc|x)?$",
-        "exclude": [
-            "node_modules",
-            "lib/node_modules"
-        ],
-        "excludePatterns": "(^|\\/|\\\\|node_modules)"
+        "include": "./lib",
+        "includePattern": ".js$",
+        "excludePatterns": "(^|\\/|\\\\)"
     },
     "plugins": [
         "plugins/markdown"
