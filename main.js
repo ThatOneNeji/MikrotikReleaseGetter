@@ -1,36 +1,89 @@
 'strict';
+/**
+ * @typedef {Object} loggingConfiguration
+ * @property {string} appenders Appenders serialise log events to some form of output
+ * @property {string} categories The category (or categories if you provide an array of values) that will be excluded from the appender.
+ * @description This defines the way the logger works
+ */
+/**
+ * @typedef {Object} loggingOptions
+ * @property {string} level The level of logging to use
+ * @property {array} areas This is the various areas used for getLogger
+ * @property {string} owner Application name
+ * @description This object contains the configuration information for the logging subsystem
+ */
+/**
+ * @typedef {object} ApplicationConfiguration
+ * @property {loggingConfiguration} logger This defines the way the logger works
+ * @property {loggingOptions} logging This object contains the configuration information for the logging subsystem
+ * @property {messageBrokerServerSettings} messagebrokers This object contains the configuration information for the message broker sub system
+ * @property {queueBase} queues This object contains the queue information for the message broker subsystem
+ * @description Configuration from config.json
+ */
+/**
+ * @property {ApplicationConfiguration} appConfig
+ */
+let appConfig;
+const releasesObj = {};
+let Logging;
 
-const https = require('https');
-const log4js = require('log4js');
-const cron = require('node-cron');
-const request = require('request');
-const appConfig = require('./config.json');
-const logger = log4js.getLogger('MikrotikReleaseGetter');
+/* Load internal libraries */
+const Logger = require('commonfunctions').Logger;
+
+const axios = require('axios');
+const cheerio = require('cheerio');
 const fs = require('fs');
-const xmlParser = require('xml2json');
-
+const https = require('https');
+const crypto = require('crypto');
+const path = require('path');
 const NodeHtmlMarkdown = require('node-html-markdown');
 const nhm = new NodeHtmlMarkdown.NodeHtmlMarkdown({}, undefined, undefined);
-
+const CronJob = require('cron').CronJob;
 const tls = require('tls');
-const path = require('path');
-const async = require('async');
-const crypto = require('crypto');
-let certFilePath;
-log4js.configure(appConfig.logger);
-logger.info('Starting');
 
-createDirectory(appConfig.downloadPath);
+
+const DownloadLib = require('./lib/download.js');
+
+/**
+ *
+ * @param {*} err String/object from sender
+ * @description We use this to exit out of the application if fatal
+ */
+function bail(err) {
+    console.error(err);
+    process.exit(1);
+}
+
+/**
+ *
+ * @description Reads configuration from local file
+ */
+function loadConfigurationFile() {
+    try {
+        appConfig = JSON.parse(fs.readFileSync('./config.json', 'utf8'));
+    } catch (err) {
+        bail(err);
+    }
+}
+
+/**
+ *
+ * @description Initialises the application
+ */
+function initialiseApplication() {
+    loadConfigurationFile();
+    Logging = new Logger(appConfig.logging);
+    createDirectory(appConfig.downloadPath);
+}
+
+/**
+ * Initialise the application
+ */
+initialiseApplication();
+
+const downloader = new DownloadLib(Logging.downloader, appConfig.defaults.timeout);
 updateSSLCert();
 
-const httpOptionsDownloads = {
-    host: appConfig.web.host,
-    path: appConfig.web.path,
-    encoding: 'binary',
-    method: 'GET'
-};
-
-/* typedefs */
 /**
  * @typedef {Object} exitOptions
  * @property {boolean} exit Is this an exit
@@ -38,99 +91,6 @@ const httpOptionsDownloads = {
  * @property {string} description The description of the type of exit
  * @description This object contains the exit information of the application
  */
-
-/**
- * @typedef {Object} fileObject
- * @property {string} url Target URL of file
- * @property {string} filename File name
- * @property {string} sha256 SHA256 hash for file
- * @property {string} filepath Local file path
- * @property {string} status Status so far
- * @property {string} size Size of local file
- * @description This object contains the information for file to be downloaded
- */
-
-/**
- * @typedef {Object} releaseObject
- * @property {string} version Scrapped version
- * @property {array} rawurls All scrapped URLs for this release
- * @property {array} urls Array of download URLs with no duplicates
- * @property {array} sha256 Array of hashes
- * @property {fileObject[]} objs This object contains the information for file to be downloaded
- * @description This object contains information for all releases
- */
-
-/**
- * @typedef {Object} releasesObjects
- * @property {releaseObject} longterm This object contains scrapped information for a release
- * @property {releaseObject} stable This object contains scrapped information for a release
- * @property {releaseObject} testing This object contains scrapped information for a release
- * @property {releaseObject} development This object contains scrapped information for a release
- * @description This object contains scrapped information for a release
- */
-
-
-/* Regex list */
-/**
- * @const {string} regexPatternLongTermRelease - Regex pattern to match Long Term release
- */
-const regexPatternLongTermRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(L/gm;
-/**
- * @const {string} regexPatternStableRelease - Regex pattern to match Stable release
- */
-const regexPatternStableRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(S/gm;
-/**
- * @const {string} regexPatternTestingRelease - Regex pattern to match Testing release
- */
-const regexPatternTestingRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(T/gm;
-/**
- * @const {string} regexPatternDevelopmentRelease - Regex pattern to match Development release
- */
-const regexPatternDevelopmentRelease = />(?<release>[0-9a-zA-Z\.]+)\s\(D/gm;
-
-
-/**
- * @const {releasesObjects} releases - This object contains information for all releases
- */
-const releases = {
-    longterm: {
-        version: '',
-        rawurls: [],
-        urls: [],
-        sha256: [],
-        objs: []
-    },
-    stable: {
-        version: '',
-        rawurls: [],
-        urls: [],
-        sha256: [],
-        objs: []
-    },
-    testing: {
-        version: '',
-        rawurls: [],
-        urls: [],
-        sha256: [],
-        objs: []
-    },
-    development: {
-        version: '',
-        rawurls: [],
-        urls: [],
-        sha256: [],
-        objs: []
-    }
-};
-
-const releaseBase = {
-    version: '',
-    rawurls: [],
-    urls: [],
-    sha256: [],
-    md5: [],
-    objs: []
-};
 
 process.stdin.resume(); // so the program will not close instantly
 
@@ -146,7 +106,8 @@ function exitHandler(options, exitCode) {
         description: options.description,
         exitcode: exitCode
     };
-    logger.debug(msg);
+
+    Logging.system.debug(msg);
     if (options.exit) {
         process.exit();
     }
@@ -155,7 +116,7 @@ function exitHandler(options, exitCode) {
 // do something when app is closing
 process.on('exit', (code) => {
     const msg = { cleanup: true, type: 'exit', code: code };
-    logger.debug('Application shut down: ' + JSON.stringify(msg));
+    Logging.system.debug('Application shut down: ' + JSON.stringify(msg));
 });
 // catches ctrl+c event
 process.on('SIGINT', exitHandler.bind(null, { exit: true, type: 'SIGINT', description: 'SIGINT is generated by the user pressing Ctrl+C and is an interrupt' }));
@@ -171,9 +132,64 @@ process.on('uncaughtException', (error) => {
         stack: error.stack
     };
     exitHandler.bind(null, msg);
-    logger.debug(msg);
+    Logging.system.error(msg);
     process.exit(1);
 });
+
+/**
+ *
+ * @param {array} releaselist
+ * @param {array} urllist
+ * @description description
+ */
+function buildReleaseURLList(releaselist, urllist) {
+    releaselist.sort().forEach((release) => {
+        const rawhash = releasesObj[release].rawhash;
+        urllist.forEach((uri) => {
+            const dlRegex = new RegExp('(?<filename>[a-zA-Z0-9:.\\-\\/]+' + release + '/[a-zA-Z0-9:._\\-\\/]+)', 'gm');
+            const reExec = dlRegex.exec(uri);
+            if (reExec) {
+                const fObj = {
+                    filename: uri.split('/').reverse()[0],
+                    hashes: {
+                        md5: '',
+                        sha256: ''
+                    },
+                    localfile: appConfig.downloadPath + '/' + release + '/' + uri.split('/').reverse()[0],
+                    status: false,
+                    url: uri
+                };
+                const hashRegex = new RegExp('^' + fObj.filename + 'MD5(?<md5>[a-zA-Z0-9]{32})SHA256(?<sha256>[a-zA-Z0-9]{64})$', 'm');
+                const reHash = hashRegex.exec(rawhash);
+                if (reHash) {
+                    fObj.hashes.sha256 = reHash.groups.sha256;
+                    fObj.hashes.md5 = reHash.groups.md5;
+                } else {
+                    const hashRegex2 = new RegExp('MD5\\s' + fObj.filename + ': (?<md5>[a-zA-Z0-9]{32})SHA256\\s' + fObj.filename + ':\\s(?<sha256>[a-zA-Z0-9]{64})', 'i');
+                    const reHash2 = hashRegex2.exec(rawhash);
+                    if (reHash2) {
+                        fObj.hashes.sha256 = reHash2.groups.sha256;
+                        fObj.hashes.md5 = reHash2.groups.md5;
+                    }
+                }
+                releasesObj[release].files.push(fObj);
+            }
+        });
+        if (releasesObj[release].files.length) {
+            getChangelog(release, 'releases');
+        }
+    });
+}
+
+/**
+ *
+ * @description This function updates the cert.pem file
+ */
+function updateSSLCert() {
+    const certFilePath = path.join(__dirname, 'cert.pem');
+    const tlsData = tls.rootCertificates.join('\n');
+    fs.writeFileSync(certFilePath, tlsData);
+}
 
 /**
  *
@@ -182,180 +198,29 @@ process.on('uncaughtException', (error) => {
  */
 function createDirectory(pathstr) {
     if (fs.existsSync(pathstr)) {
-        logger.debug('Path "' + pathstr + '" exists');
+        Logging.fs.debug('Path "' + pathstr + '" exists');
     } else {
-        logger.debug('Path "' + pathstr + '" does not exist, creating it...');
+        Logging.fs.debug('Path "' + pathstr + '" does not exist, creating it...');
         fs.mkdirSync(pathstr);
     }
 }
 
 /**
- * @description This function updates the cert.pem file
- */
-function updateSSLCert() {
-    certFilePath = path.join(__dirname, 'cert.pem');
-    const tlsData = tls.rootCertificates.join('\n');
-    fs.writeFileSync(certFilePath, tlsData);
-}
-
-/**
  *
- * @param {string} line Raw line to be used to check if it contains a release value
- * @description This function checks to see if the supplied line matches any of the release's regex patterns
- */
-function getReleases(line) {
-    const reExec1 = regexPatternLongTermRelease.exec(line);
-    if (reExec1) {
-        releases.longterm.version = reExec1.groups.release;
-    }
-    const reExec2 = regexPatternStableRelease.exec(line);
-    if (reExec2) {
-        releases.stable.version = reExec2.groups.release;
-    }
-    const reExec3 = regexPatternTestingRelease.exec(line);
-    if (reExec3) {
-        releases.testing.version = reExec3.groups.release;
-    }
-    const reExec4 = regexPatternDevelopmentRelease.exec(line);
-    if (reExec4) {
-        releases.development.version = reExec4.groups.release;
-    }
-}
-
-/**
- *
- * @param {string} localFile Target file
- * @return {boolean}
- * @description This function checks to see if the target file exists
- */
-function checkIfFileExists(localFile) {
-    let fileRes = false;
-    try {
-        const stats = fs.statSync(localFile);
-        if (stats.size) {
-            fileRes = true;
-        }
-    } catch (err) {
-        if (err.code != 'ENOENT') {
-            logger.error('Problem with checking file "' + localFile + '":' + JSON.stringify(err));
-        }
-    }
-    return fileRes;
-}
-
-/**
- *
- * @param {string} filename Target file to be checked
- * @return {number|boolean}
- * @description This function tries to get the size of the target file
- */
-function getFileStats(filename) {
-    try {
-        const stats = fs.statSync(filename);
-        return stats.size;
-    } catch (err) {
-        logger.error('Problem getting stats for file "' + localFile + '":' + JSON.stringify(err));
-    }
-    return false;
-}
-
-
-/**
- *
- * @param {string} localFile Target local file name
- * @param {string} remotePath Remote file name
- * @param {function} callback Callback function
- * @description This function actually downloads the remote file
- */
-function download(localFile, remotePath, callback) {
-    const localStream = fs.createWriteStream(localFile);
-    const out = request({ uri: remotePath });
-    out.on('response', function(resp) {
-        if (resp.statusCode === 200) {
-            out.pipe(localStream);
-            localStream.on('close', function() {
-                callback(null, localFile);
-            });
-        } else {
-            callback(new Error('No file found at given url.'), null);
-        }
-    });
-}
-
-/**
- *
- * @param {string} uri Uniform Resource Identifier
- * @param {array} rawPage Lines from the download page
- * @return {fileObject}
- * @description This function scraps the SHA256 hash for the various files
- */
-function buildFileObject(uri, rawPage) {
-    const fObj = {
-        url: uri,
-        filename: uri.split('/').reverse()[0],
-        sha256: ''
-    };
-    const hashRegex = new RegExp('>' + fObj.filename + '</td><td>MD5</td><td>[a-zA-Z0-9]+</td></tr><tr><td>SHA256</td><td>(?<sha_1>[a-zA-Z0-9]+)</td>|<b>SHA256 </b>' + fObj.filename + ': (?<sha_2>[a-zA-Z0-9]+)<br', 'i');
-    rawPage.forEach((line) => {
-        const shaExec = hashRegex.exec(line);
-        if (shaExec) {
-            if (shaExec.groups.sha_1) {
-                fObj.sha256 = shaExec.groups.sha_1;
-            } else {
-                fObj.sha256 = shaExec.groups.sha_2;
-            }
-        }
-    });
-    return fObj;
-}
-
-/**
- *
- * @param {array} objs Array of objects that contain filenames and their hashes
- * @param {string} downloadPath Target location to where the file must be written to
- * @description This function creates the SHA256SUMS file that contains the hashes per file
- */
-function createSumsFile(objs, downloadPath) {
-    const sums = [];
-    objs.forEach((element) => {
-        sums.push(element.sha256 + ' *' + element.filename);
-    });
-    try {
-        fs.writeFileSync(downloadPath + 'SHA256SUMS', sums.join('\n'), { encoding: 'utf8', flag: 'w' });
-    } catch (e) {
-        logger.error('Problem saving "' + downloadPath + 'SHA256SUMS" ' + JSON.stringify(e));
-    }
-}
-
-
-/**
- *
+ * @param {string} hash Hash type
  * @param {fileObject} item This object contains the information needed to verify the downloaded file
- * @return {fileObject}
+ * @return {boolean}
  * @description This function checks to see that the download file's hash matches what was scrapped from the download page
  */
-function verifyFile(item) {
-    const testfile = fs.readFileSync(item.filepath);
-    const sha256sum = crypto.createHash('sha256').update(testfile).digest('hex');
-    logger.debug('Checking hash of "' + item.filepath + '"');
-    if (item.sha256 == sha256sum) {
-        item.status = 'Hash matches';
+function verifyFileHash(hash, item) {
+    const testfile = fs.readFileSync(item.localfile);
+    const hashsum = crypto.createHash(hash).update(testfile).digest('hex');
+    // / Logging.system.debug('Checking ' + hash + ' hash of "' + item.localfile + '"');
+    if (item.hashes[hash] != '') {
+        if (item.hashes[hash] == hashsum) {
+            return true;
+        }
     } else {
-        item.status = 'Hash failed';
-    }
-    return item;
-}
-
-/**
- *
- * @param {string} line
- * @param {string} pattern
- * @return {boolean}
- * @description description
- */
-function ifRegexMatch(line, pattern) {
-    const re = new RegExp(pattern);
-    if (re.test(line)) {
         return true;
     }
     return false;
@@ -363,111 +228,264 @@ function ifRegexMatch(line, pattern) {
 
 /**
  *
+ * @param {object} fileObj
+ * @return {object}
+ * @description description
+ */
+function validateFile(fileObj) {
+    // / Logging.system.debug('Checking if "' + fileObj.localfile + '" exists');
+    try {
+        const stats = fs.statSync(fileObj.localfile);
+        if (stats.size) {
+            // / Logging.system.debug('Validating hash(es) "' + fileObj.localfile + '"');
+            fileObj.status = verifyFileHash('sha256', fileObj);
+            if (!fileObj.status) {
+                fileObj.status = verifyFileHash('md5', fileObj);
+            }
+        }
+    } catch (err) {
+        Logging.fs.error('Problem with checking file "' + fileObj.localfile + '" => ' + JSON.stringify(err));
+    }
+    return fileObj;
+}
+
+/**
+ *
+ * @return {array}
+ * @description description
+ */
+function buildDownloadList() {
+    const downloadList = [];
+    const dKeys = Object.keys(releasesObj).sort();
+    dKeys.forEach((key) => {
+        if (releasesObj.hasOwnProperty(key)) {
+            const obj = releasesObj[key];
+            if (obj.hasOwnProperty('files')) {
+                if (obj.files.length) {
+                    createDirectory(appConfig.downloadPath + '/' + key);
+                    obj.files.forEach((element) => {
+                        const tmp = validateFile(element);
+                        if (!tmp.status) {
+                            downloadList.push(tmp);
+                        }
+                    });
+                }
+                // //
+            }
+        }
+    });
+    // }
+    return downloadList.sort((a, b) => (a.localfile > b.localfile) ? 1 : ((b.localfile > a.localfile) ? -1 : 0));
+}
+
+/**
+ *
  * @param {string} release This is the release that will be searched for in order to get the changelog
+ * @param {string} type
  * @description This function gets the changelog entries for teh supplied release
  */
-function getChangelog(release) {
+function getChangelog(release, type) {
     let str = '';
     let extractedChangelog = '';
+
     const httpOptionsChangelogs = {
-        host: appConfig.web.host,
-        path: appConfig.web.changelog2 + release,
+        host: appConfig.web[type].host,
+        path: appConfig.web[type].changelog + release,
         encoding: 'binary',
-        method: 'GET'
+        method: 'GET',
+        starttime: new Date().valueOf()
     };
-    //   httpOptionsChangelogs.path = appConfig.web.changelog2 + release;
     const req = https.request(httpOptionsChangelogs, (res) => {
-        logger.debug('HTTP statusCode for "' + httpOptionsChangelogs.path + '":' + res.statusCode);
         res.on('data', (d) => {
             str += d;
         });
         res.on('end', function() {
+            httpOptionsChangelogs.statuscode = res.statusCode;
+            httpOptionsChangelogs.statusmessage = res.statusMessage;
+            httpOptionsChangelogs.length = res.headers['content-length'];
+            httpOptionsChangelogs.size = str.length;
+            httpOptionsChangelogs.serverdatetime = res.headers.date;
+            httpOptionsChangelogs.content_type = res.headers['content-type'];
+            httpOptionsChangelogs.endtime = new Date().valueOf();
+            httpOptionsChangelogs.timetaken = httpOptionsChangelogs.endtime - httpOptionsChangelogs.starttime;
+            Logging.https.debug(JSON.stringify(httpOptionsChangelogs));
             extractedChangelog = str.split('\r\n');
             try {
                 fs.writeFileSync(appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md', nhm.translate(extractedChangelog.join('<br>')), { encoding: 'utf8', flag: 'w' });
             } catch (e) {
-                logger.error('Problem saving "' + appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md" ' + JSON.stringify(e));
+                Logging.fs.error('Problem saving "' + appConfig.downloadPath + '/' + release + '/' + 'CHANGELOG.md" ' + JSON.stringify(e));
             }
         });
     });
 
     req.on('error', (e) => {
-        logger.error('Problem getting download page:' + JSON.stringify(e));
+        Logging.https.error('Problem getting download page:' + JSON.stringify(e));
     });
 
     req.end();
 }
 
-cron.schedule(appConfig.cron, function() {
-    logger.info('Running cron...');
-    let str = '';
-    const req = https.request(httpOptionsDownloads, (res) => {
-        logger.debug('HTTP statusCode for "' + httpOptionsDownloads.path + '":' + res.statusCode);
-        res.on('data', (d) => {
-            str += d;
-        });
-        res.on('end', function() {
-            const contentData = str.replace(/td>/g, '\n').replace(/li>/g, '\n').split('\n');
-            logger.info('Processing ' + contentData.length + ' lines');
-            contentData.forEach((line) => {
-                getReleases(line);
-            });
-            for (const prop in releases) {
-                if (Object.prototype.hasOwnProperty.call(releases, prop)) {
-                    if (releases[prop].version) {
-                        releases[prop].objs = [];
-                        logger.debug('Now working on release "' + releases[prop].version + '"');
-
-                        createDirectory(appConfig.downloadPath + '/' + releases[prop].version);
-                        //                        const dlRegex = new RegExp('<a href="(?<filename>[a-zA-Z0-9:.\\-\\/]+' + releases[prop].version + '[a-zA-Z0-9:._\\-\\/]+)', 'gm');
-                        const dlRegex = new RegExp('<a href="(?<filename>[a-zA-Z0-9:.\\-\\/]+' + releases[prop].version + '/[a-zA-Z0-9:._\\-\\/]+)', 'gm');
-                        contentData.forEach((line) => {
-                            const reExec = dlRegex.exec(line);
-                            if (reExec) {
-                                releases[prop].rawurls.push(reExec.groups.filename);
-                            }
-                        });
-
-                        releases[prop].urls = [...new Set(releases[prop].rawurls)];
-                        releases[prop].urls.sort().forEach((element) => {
-                            releases[prop].objs.push(buildFileObject(element, str.split('\n')));
-                        });
-                        async.forEach(releases[prop].objs, function(item, cb) {
-                            const localFileName = item.filename;
-                            const filename = appConfig.downloadPath + '/' + releases[prop].version + '/' + localFileName;
-                            item.filepath = filename;
-                            item.status = 'downloading';
-                            item.size = 0;
-                            if (!checkIfFileExists(filename) || appConfig.redownload) {
-                                download(filename, item.url, function(err, result) {
-                                    if (err) {
-                                        logger.error('Problem downloading file:' + JSON.stringify(err));
-                                    }
-                                    if (result) {
-                                        item.status = 'done';
-                                        item.size = getFileStats(filename);
-                                        item = verifyFile(item);
-                                        logger.info(item);
-                                    }
-                                    cb();
+/**
+ *
+ * @return {object}
+ * @description description
+ */
+function buildHashList() {
+    const hashList = {};
+    for (const key in releasesObj) {
+        if (releasesObj.hasOwnProperty(key)) {
+            const obj = releasesObj[key];
+            hashList[key] = {};
+            if (obj.hasOwnProperty('files')) {
+                if (obj.files.length) {
+                    obj.files.forEach((element) => {
+                        for (const hashKey in element.hashes) {
+                            if (element.hashes.hasOwnProperty(hashKey)) {
+                                if (!hashList[key][hashKey]) {
+                                    hashList[key][hashKey] = [];
+                                }
+                                hashList[key][hashKey].push({
+                                    filename: element.filename,
+                                    hash: element.hashes[hashKey]
                                 });
                             }
-                        }, function(err) {
-                            logger.error('Problem downloading files:' + JSON.stringify(err));
-                        });
-                        createSumsFile(releases[prop].objs, appConfig.downloadPath + '/' + releases[prop].version + '/');
-                        getChangelog(releases[prop].version);
-                    } else {
-                        logger.debug('No version found for "' + prop + '"');
-                    }
+                        }
+                    });
                 }
             }
-        });
-    });
+        }
+    }
+    return hashList;
+}
 
-    req.on('error', (e) => {
-        logger.error('Problem getting download page:' + JSON.stringify(e));
-    });
+/**
+ *
+ * @param {string} filename
+ * @param {string} data
+ * @description description
+ */
+function writefile(filename, data) {
+    try {
+        fs.writeFileSync(filename, data);
+    } catch (err) {
+        Logging.fs.error('Problem with writing file "' + filename + '" => ' + JSON.stringify(err));
+    }
+}
 
-    req.end();
-});
+/**
+ *
+ * @param {array} arrList
+ * @return {string}
+ * @description description
+ */
+function buildList(arrList) {
+    let list = '';
+    arrList.sort((a, b) => (a.filename > b.filename) ? 1 : ((b.filename > a.filename) ? -1 : 0));
+    arrList.forEach((line) => {
+        list += line.hash + '  ' + line.filename + '\n';
+    });
+    return list;
+}
+
+/**
+ *
+ * @param {string} release
+ * @param {object} hashobject
+ * @description description
+ */
+function buildHashFile(release, hashobject) {
+    for (const hash in hashobject) {
+        if (hashobject.hasOwnProperty(hash)) {
+            const hashFileName = path.join(appConfig.downloadPath, release, hash.toUpperCase() + 'SUMS.txt');
+            writefile(hashFileName, buildList(hashobject[hash]));
+        }
+    }
+}
+
+/**
+ *
+ * @param {object} hashlistobject
+ * @description description
+ */
+function buildHashFiles(hashlistobject) {
+    for (const key in hashlistobject) {
+        if (Object.prototype.hasOwnProperty.call(hashlistobject, key)) {
+            buildHashFile(key, hashlistobject[key]);
+        }
+    }
+}
+
+/**
+ *
+ * @param {string} url
+ * @description description
+ */
+function getReleaseDownLoadURLs(url) {
+    Logging.system.info('Getting page from :: ' + url);
+    axios(url)
+        .then((response) => {
+            const html = response.data;
+            const $ = cheerio.load(html);
+            const rawreleases = [];
+            const rawurls = [];
+            /* Get list of releases */
+            $('.downloadTable', html).each(function() {
+                const url2 = $(this).find('thead').find('tr').text();
+                const fff = url2.trim().replace(/\t/g, ' ').replace(/\s\s\s/g, ' ').split(' ');
+                const regexPatternLongTermRelease = /(?<release>^[\d].[0-9a-zA-Z\\.]+)/gm;
+                if (fff.length) {
+                    fff.forEach((line) => {
+                        const reExec1 = regexPatternLongTermRelease.exec(line);
+                        if (reExec1) {
+                            rawreleases.push(reExec1.groups.release);
+                        }
+                    });
+                }
+            });
+
+            /* Get list of urls */
+            const listItems = $('a');
+            listItems.each(function(_idx, el) {
+                const regexPattern = /(?<url>routeros)/gm;
+                const reExec2 = regexPattern.exec($(el).attr('href'));
+                if (reExec2) {
+                    rawurls.push($(el).attr('href'));
+                }
+            });
+            const sortedreleases = [...new Set(rawreleases)];
+            const sortedurls = [...new Set(rawurls)];
+
+            sortedreleases.forEach((release) => {
+                releasesObj[release] = {
+                    files: [],
+                    rawhash: '',
+                    filelist: []
+                };
+                const divName = release.replace(/\./g, '_');
+                $('#md5_' + divName, html).each(function() {
+                    releasesObj[release].rawhash = $(this).text();
+                });
+                $('#chmd5_' + divName, html).each(function() {
+                    releasesObj[release].rawhash += $(this).text();
+                });
+            });
+
+            buildReleaseURLList(sortedreleases, sortedurls);
+            const dlist = buildDownloadList();
+            buildHashFiles(buildHashList());
+            downloader.fetchAllUrls(dlist);
+        }).catch((err) => Logging.system.error(err));
+}
+
+/**
+ * @constant
+ * @todo Write the documentation.
+ * @todo Implement this function.
+ * @return {class}
+ * @description Cronjob that is meant to run every hour on the hour for releases
+ */
+// eslint-disable-next-line no-unused-vars
+const cronEveryHour = new CronJob(appConfig.cron.interval, function() {
+    Logging.cron.info('Running interval: \'' + appConfig.cron.interval + '\'');
+    getReleaseDownLoadURLs('https://' + appConfig.web.releases.host + appConfig.web.releases.path);
+}, null, appConfig.cron.enabled, appConfig.cron.timezone);
